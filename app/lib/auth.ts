@@ -1,13 +1,22 @@
+import NextAuth, { NextAuthOptions, DefaultSession } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
-import { NextAuthOptions } from "next-auth";
+import bcrypt from "bcryptjs";
 import dbConnect from "./db";
 import User from "../model/User";
-import bcrypt from "bcryptjs";
+
+// Extend the built-in session types to include the ID and Role
+declare module "next-auth" {
+  interface Session {
+    user: {
+      id: string;
+      role?: string;
+    } & DefaultSession["user"];
+  }
+}
 
 export const authOptions: NextAuthOptions = {
   providers: [
-    
     // 🔹 1. Credentials Login
     CredentialsProvider({
       name: "Credentials",
@@ -15,33 +24,26 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "text" },
         password: { label: "Password", type: "password" }
       },
-
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
           throw new Error("Email and Password required");
         }
 
         await dbConnect();
-
         const user = await User.findOne({ email: credentials.email });
 
-        if (!user) {
-          throw new Error("Invalid email or password");
+        if (!user || !user.password || user.password === "GOOGLE_AUTH") {
+          throw new Error("Please log in using Google or check your credentials");
         }
 
-        const isMatch = await bcrypt.compare(
-          credentials.password,
-          user.password
-        );
-
-        if (!isMatch) {
-          throw new Error("Invalid email or password");
-        }
+        const isMatch = await bcrypt.compare(credentials.password, user.password);
+        if (!isMatch) throw new Error("Invalid email or password");
 
         return {
           id: user._id.toString(),
           email: user.email,
           name: user.name,
+          role: user.role, // Added role for your job portal logic
         };
       }
     }),
@@ -53,38 +55,34 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
 
+  // ⚡ Fix: Merge duplicate session configs and use lowercase
   session: {
     strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 days
   },
 
-  // 🔥 IMPORTANT: callbacks
   callbacks: {
-    
     async signIn({ user, account }) {
-      await dbConnect();
-
-      // 🔹 Google login case
       if (account?.provider === "google") {
-
+        await dbConnect();
         const existingUser = await User.findOne({ email: user.email });
 
         if (!existingUser) {
-          // New user → DB me save karo
           await User.create({
             email: user.email,
             name: user.name,
-            password: "GOOGLE_AUTH", // dummy password
+            password: "GOOGLE_AUTH", 
+            role: "JobSeeker", // Default role for new OAuth users
           });
         }
       }
-
       return true;
     },
 
     async jwt({ token, user }) {
-      // login ke time user milta hai
       if (user) {
         token.id = user.id;
+        token.role = (user as any).role; // Pass role to token
       }
       return token;
     },
@@ -92,8 +90,14 @@ export const authOptions: NextAuthOptions = {
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
+        session.user.role = token.role as string; // Pass role to session
       }
       return session;
     }
-  }
+  },
+
+  pages: {
+    signIn: "/auth/signin",
+    error: "/auth/signin", 
+  },
 };

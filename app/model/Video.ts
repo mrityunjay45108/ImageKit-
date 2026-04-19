@@ -1,4 +1,4 @@
-import mongoode,{Schema,model,models} from "mongoose";
+import mongoose,{Schema,model,models} from "mongoose";
 
 export const VIDEO_DIMENSIONS = {
   width: 1280,
@@ -6,14 +6,14 @@ export const VIDEO_DIMENSIONS = {
 }as const;
 
 export interface Video{
-  id?:mongoode.Types.ObjectId;
+  id?:mongoose.Types.ObjectId;
   title: string;
   description: string;
   url: string;
   thumbnailUrl: string;
   videoUrl: string;
   controls?: boolean;
-  userId:mongoode.Types.ObjectId;
+  userId:mongoose.Types.ObjectId;
   transformations?: {
     width: number;
     height: number;
